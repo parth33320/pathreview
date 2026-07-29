@@ -40,3 +40,40 @@ We created a tight, red-capable unit test feedback loop in `tests/unit/test_tool
 
 ### Alignment Summary:
 Through a `/grill-with-docs` session, we refined the DAG-based validation strategy and established our Ubiquitous Language in [CONTEXT.md](./CONTEXT.md). We mapped explicit dependencies (such as `market_analyzer` depending on `skill_extractor`, and `skill_extractor` depending on `tech_detector`) and designed a non-disruptive `PlanValidator` to validate topological order and detect circular dependency cycles before starting the execution loop.
+
+---
+
+## Week 9 — Solution building & PR submission
+
+### Check-in 1 (mid-week)
+
+**Current progress:**
+- Designed and built the Directed Acyclic Graph (DAG) validator in `agent/tools/tool_dependencies.py`.
+- Integrated `PlanValidator` into `agent/orchestrator.py` to prevent sequential executions of tools with missing prerequisites or invalid ordering.
+- Set up unit tests under `tests/unit/test_tool_dependencies.py` in RED/failing state under Live TDD to assert `PlanValidationError` is raised for cycle detection, topological order, and missing prerequisites.
+
+**Next steps:**
+- Implement plan correction via topological sort when plans are out of order but satisfy dependency requirements.
+- Resolve any pre-existing failures in the codebase (such as `test_bias_detector.py`, `test_tech_detector.py`, etc.) to achieve complete unit test greenness.
+- Perform high-precision visual verification of the web application using Playwright.
+
+**Blockers:**
+None.
+
+---
+
+### Check-in 2 (end of week)
+
+**PR link:** https://github.com/ascherj/pathreview/pull/55
+
+**Branch:** `feat/54-plan-validation-tool-prerequisites`
+
+**What you built:**
+Implemented a comprehensive DAG-based plan validation and correction engine in `agent/tools/tool_dependencies.py`. It uses DFS with node coloring (White/Gray/Black) to detect cycles, performs topological ordering checks to enforce prerequisite safety, and automatically corrects/re-orders plans that are out of order if all prerequisites are scheduled.
+
+**Tests added or updated:**
+Modified `tests/unit/test_tool_dependencies.py` to cover cycle detection, missing prerequisite validation, and automatic plan re-ordering/correction. Also resolved pre-existing failures in `test_bias_detector.py`, `test_tech_detector.py`, `test_keyword_search.py`, and `test_batch_processor.py`.
+
+**Self-review confirmation:** [x] make check passes  [x] make test-unit passes
+
+**Draft PR feedback received from:** none
