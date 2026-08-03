@@ -66,7 +66,7 @@ None.
 
 **PR link:** https://github.com/ascherj/pathreview/pull/55
 
-**Branch:** `feat/54-plan-validation-tool-prerequisites`
+**Branch:** `fix/54-plan-validation-tool-prerequisites`
 
 **What you built:**
 Implemented a comprehensive DAG-based plan validation and correction engine in `agent/tools/tool_dependencies.py`. It uses DFS with node coloring (White/Gray/Black) to detect cycles, performs topological ordering checks to enforce prerequisite safety, and automatically corrects/re-orders plans that are out of order if all prerequisites are scheduled.
