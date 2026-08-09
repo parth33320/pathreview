@@ -40,3 +40,73 @@ We created a tight, red-capable unit test feedback loop in `tests/unit/test_tool
 
 ### Alignment Summary:
 Through a `/grill-with-docs` session, we refined the DAG-based validation strategy and established our Ubiquitous Language in [CONTEXT.md](./CONTEXT.md). We mapped explicit dependencies (such as `market_analyzer` depending on `skill_extractor`, and `skill_extractor` depending on `tech_detector`) and designed a non-disruptive `PlanValidator` to validate topological order and detect circular dependency cycles before starting the execution loop.
+
+---
+
+## Week 9 — Solution building & PR submission
+
+### Check-in 1 (mid-week)
+
+**Current progress:**
+- Designed and built the Directed Acyclic Graph (DAG) validator in `agent/tools/tool_dependencies.py`.
+- Integrated `PlanValidator` into `agent/orchestrator.py` to prevent sequential executions of tools with missing prerequisites or invalid ordering.
+- Set up unit tests under `tests/unit/test_tool_dependencies.py` in RED/failing state under Live TDD to assert `PlanValidationError` is raised for cycle detection, topological order, and missing prerequisites.
+
+**Next steps:**
+- Implement plan correction via topological sort when plans are out of order but satisfy dependency requirements.
+- Resolve any pre-existing failures in the codebase (such as `test_bias_detector.py`, `test_tech_detector.py`, etc.) to achieve complete unit test greenness.
+- Perform high-precision visual verification of the web application using Playwright.
+
+**Blockers:**
+None.
+
+---
+
+### Check-in 2 (end of week)
+
+**PR link:** https://github.com/ascherj/pathreview/pull/55
+
+**Branch:** `feat/54-plan-validation-tool-prerequisites`
+
+**What you built:**
+Implemented a comprehensive DAG-based plan validation and correction engine in `agent/tools/tool_dependencies.py`. It uses DFS with node coloring (White/Gray/Black) to detect cycles, performs topological ordering checks to enforce prerequisite safety, and automatically corrects/re-orders plans that are out of order if all prerequisites are scheduled.
+
+**Tests added or updated:**
+Modified `tests/unit/test_tool_dependencies.py` to cover cycle detection, missing prerequisite validation, and automatic plan re-ordering/correction. Also resolved pre-existing failures in `test_bias_detector.py`, `test_tech_detector.py`, `test_keyword_search.py`, and `test_batch_processor.py`.
+
+**Self-review confirmation:** [x] make check passes  [x] make test-unit passes
+
+**Draft PR feedback received from:** none
+
+---
+
+## Week 10 — Iteration & reflection
+
+### Reviewer feedback
+
+**Feedback received:** [x] Yes  [ ] No — still awaiting review
+
+**Summary of feedback:**
+During our initial internal code review, the reviewer raised two blocking issues: first, although `orchestrator.run` detected plan errors correctly, it did not have an automatic correction mechanism to topologically sort and execute an out-of-order plan. Second, the local development database `pathreview_dev.db` was accidentally staged for commit. Additionally, there were minor styling / peer dependency differences in `frontend/package-lock.json`.
+
+**How you responded:**
+We immediately implemented a full `topological_sort` algorithm on `PlanValidator` in `agent/tools/tool_dependencies.py` to automatically reorder tools to satisfy prerequisites when possible. We updated `Orchestrator.run()` to catch `PlanValidationError` and attempt to reorder and execute the sorted plan dynamically. We also removed `pathreview_dev.db` from git staging and added `*.db` to `.gitignore` to avoid repository pollution, and restored `package-lock.json` to its clean upstream state.
+
+---
+
+### Reflection
+
+**What was harder than you expected?**
+The most challenging part of the implementation was handling the database dialect mismatch between SQLite (which we used for local testing due to Docker environment limitations in the sandbox) and PostgreSQL. SQLAlchemy's `UUID(as_uuid=False)` returned actual Python `UUID` objects on SQLite which triggered `'UUID' object has no attribute 'replace'` exceptions in downstream service layers. Resolving this required carefully identifying the data-type conversion bottlenecks and explicitly casting `UUID` arguments to strings (e.g. `str(profile_id)`) inside `core/services/review_service.py` to ensure cross-dialect database safety.
+
+**What did you learn about working in a large codebase?**
+I learned that in a production-scale system, components are heavily decoupled but highly interdependent. The Orchestrator lived as an isolated module within the `agent` subsystem, but bringing our DAG validator to life required a complete end-to-end integration vertical slice: from tracing how the FastAPI backend spawns the asynchronous `process_review` task in `core/services/review_service.py`, to ensuring that the `error_message` schema field correctly bubbled up to the React frontend UI on the `/reviews/:id` dashboard page. You can't just build a standalone algorithm; you must meticulously trace the flow of data through all layers of the machine.
+
+**How did AI tools help — and where did they fall short?**
+AI tools were incredibly effective for bootstrapping the initial DFS graph-coloring cycle detection and topological sorting logic in `agent/tools/tool_dependencies.py`, as well as generating comprehensive unit test templates. However, they fell short when diagnosing the complex interactions of third-party libraries—specifically, how pytest's standard `caplog` fixture interacted with a customized `structlog` standard library logger factory, and why the local SQLite connection failed on UUID parameters. Fixing these required deep, manual code inspection and logical reasoning from first principles rather than relying on standard code-completion suggestions.
+
+**What would you do differently if you started over?**
+If I were to start over, I would investigate and resolve the environment's logging and database adapter differences much earlier in the planning phase. I spent too much time trying to work around `caplog` failures before realizing that a simple `configure_logging()` initialization in `conftest.py` would bridge structlog with the standard logging system. Decoupling testing environment assumptions from production infrastructure as early as possible would have saved several iteration cycles.
+
+**What are you most proud of from this module?**
+I am incredibly proud of implementing a robust plan correction/recovery system via the topological sort algorithm, rather than just raising a failure. Seeing the background orchestrator catch an out-of-order plan (such as executing `market_analyzer` before its prerequisite `skill_extractor`), successfully reorder them on the fly, and run them perfectly without crashing or showing blank results was a wonderful "aha!" moment that proved our system is truly production-ready.
