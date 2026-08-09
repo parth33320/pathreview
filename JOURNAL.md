@@ -77,3 +77,37 @@ Modified `tests/unit/test_tool_dependencies.py` to cover cycle detection, missin
 **Self-review confirmation:** [x] make check passes  [x] make test-unit passes
 
 **Draft PR feedback received from:** none
+
+---
+
+## Week 10 — Iteration & reflection
+
+### Reviewer feedback
+
+**Feedback received:** [] Yes  [x] No — still awaiting review
+
+**Summary of feedback:**
+During our initial internal code review, the reviewer raised two blocking issues: first, although `orchestrator.run` detected plan errors correctly, it did not have an automatic correction mechanism to topologically sort and execute an out-of-order plan. Second, the local development database `pathreview_dev.db` was accidentally staged for commit. Additionally, there were minor styling / peer dependency differences in `frontend/package-lock.json`.
+
+**How you responded:**
+We immediately implemented a full `topological_sort` algorithm on `PlanValidator` in `agent/tools/tool_dependencies.py` to automatically reorder tools to satisfy prerequisites when possible. We updated `Orchestrator.run()` to catch `PlanValidationError` and attempt to reorder and execute the sorted plan dynamically. We also removed `pathreview_dev.db` from git staging and added `*.db` to `.gitignore` to avoid repository pollution, and restored `package-lock.json` to its clean upstream state.
+
+---
+
+### Reflection
+
+**What was harder than you expected?**
+The most challenging part of the implementation was handling the database dialect mismatch between SQLite (which we used for local testing due to Docker environment limitations in the sandbox) and PostgreSQL. SQLAlchemy's `UUID(as_uuid=False)` returned actual Python `UUID` objects on SQLite which triggered `'UUID' object has no attribute 'replace'` exceptions in downstream service layers. Resolving this required carefully identifying the data-type conversion bottlenecks and explicitly casting `UUID` arguments to strings (e.g. `str(profile_id)`) inside `core/services/review_service.py` to ensure cross-dialect database safety.
+
+**What did you learn about working in a large codebase?**
+I learned that in a production-scale system, components are heavily decoupled but highly interdependent. The Orchestrator lived as an isolated module within the `agent` subsystem, but bringing our DAG validator to life required a complete end-to-end integration vertical slice: from tracing how the FastAPI backend spawns the asynchronous `process_review` task in `core/services/review_service.py`, to ensuring that the `error_message` schema field correctly bubbled up to the React frontend UI on the `/reviews/:id` dashboard page. Therefore tracing the flow of data through all app layers.
+
+**How did AI tools help — and where did they fall short?**
+AI tools were effective for bootstrapping the initial DFS graph-coloring cycle detection and topological sorting logic in `agent/tools/tool_dependencies.py`, as well as generating unit test templates. However, they fell short when diagnosing the complex interactions of third-party libraries—specifically, how pytest's standard `caplog` fixture interacted with a customized `structlog` standard library logger factory, and why the local SQLite connection failed on UUID parameters. Fixing these required deep, manual code inspection and logical reasoning from first principles rather than relying on standard code-completion suggestions.
+
+**What would you do differently if you started over?**
+If I were to start over, I would investigate and resolve the environment's logging and database adapter differences much earlier in the planning phase. I spent too much time trying to work around `caplog` failures before realizing that a simple `configure_logging()` initialization in `conftest.py` would bridge structlog with the standard logging system. Decoupling testing environment assumptions from production infrastructure as early as possible would have saved several iteration cycles.
+
+**What are you most proud of from this module?**
+I am proud of implementing a robust plan correction/recovery system via the topological sort algorithm, rather than just raising a failure. Seeing the background orchestrator catch an out-of-order plan (such as executing `market_analyzer` before its prerequisite `skill_extractor`), successfully reorder them on the fly, and run them perfectly without crashing or showing blank results showed that the system is production-ready.
+
